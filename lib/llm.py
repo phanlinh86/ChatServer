@@ -64,7 +64,7 @@ LANG_DICT = {   "en": "english",
                 "de": "german",
             }  # Language codes
 SPEAK_MIN_LENGTH = 10  # Minimum length of text to be spoken
-BASE_MODEL = "llama3.2:latest"
+BASE_MODEL = "gemma3:12b"
 
 
 class LLM(object):

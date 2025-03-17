@@ -1,75 +1,54 @@
-"""A Streamlit web application integrating LLM and Media functionalities.
-
-This module creates an interactive web interface for interacting with an AI assistant (via `llm.LLM`) and managing
-media files (via `media.Media`). Users can chat with the AI, download media from URLs, play media files, record
-audio or video, and capture screenshots. The application uses Streamlit for a simple, reactive UI.
-
-Key Features:
-    - Chat interface with the AI assistant with conversation history.
-    - Media download from URLs with file display.
-    - Media playback control (start/stop).
-    - Audio and video recording with configurable durations.
-    - Screenshot capture with file display.
-
-Dependencies:
-    - streamlit: For creating the web application and UI components.
-    - llm: Custom module providing the `LLM` class for AI interactions.
-    - media: Custom module providing the `Media` class for media operations.
-    - os: For file and directory management.
-
-Usage:
-    Run the script directly (`streamlit run app_streamlit.py`) to start the server, then access it at
-    `http://localhost:8501/`.
-"""
-
 import streamlit as st
-import lib.llm as llm  # Importing from llm.py
-import lib.media as media  # Importing from media.py
-import os
-import time
+from openai import OpenAI
 
-# Initialize LLM and Media instances
-if 'llm' not in st.session_state:
-    st.session_state['llm'] = llm
-    st.session_state['llm'].verbose = False
-if 'media' not in st.session_state:
-    st.session_state['media'] = media
-    st.session_state['media'].verbose = False
-
-# Set output directory
-UPLOAD_FOLDER = st.session_state['media'].out_path
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
+BASE_MODEL = "gemma3:12b"
+PROMPT_ASSISTANT = ("The following is a conversation with an AI assistant.\n"
+                    "The assistant is helpful, creative, clever, and very friendly.\n\n"
+                    "User: Hello, who are you?\n"
+                    "AI: I am an AI assistant. How can I help you today?\n"
+                    "User: What can you do for me?\n"
+                    "AI: I can help you with a variety of tasks. What do you need help with?\n"
+                    "User:")
 
 # Main app layout
 st.title("AI & Media Web App")
-
-# Chat Section
 st.header("Chat with AI")
+
+# Initialize session state
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
+    st.session_state['chat_history'] = ""
+    st.session_state['chat_messages'] = [{"role": "system", "content": PROMPT_ASSISTANT}]
 
-chat_input = st.text_area("Type your message...", key="chat_input")
-col1, col2 = st.columns(2)
-speak = False
-with col1:
-    # Chat with AI
-    if st.button("Send", key="chat_send"):
-        if chat_input:
-            speak = not speak
-            response = st.session_state['llm'].chat(chat_input, speak=False)
-            st.session_state['chat_history'].append(("You", chat_input))
-            st.session_state['chat_history'].append(("AI", response))
-            #st.session_state['chat_history'] = [("Speak", speak), ("You", chat_input), ("AI", response)]
-            st.session_state['last_response'] = response  # Store last response for speaking
-with col2:
-    # Speak last response
-    if st.button("Speak", key="chat_speak"):
-        st.session_state['speak'] = not st.session_state['speak']
+# Chat history display
+history_container = st.empty()
+history_container.text(st.session_state['chat_history'])
 
-st.text_area("Chat History", value="\n".join([f"{role}: {msg}" for role, msg in st.session_state['chat_history']]), height=200)
+# Initialize LLM client
+client = OpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama")
 
+# Chat input (submits on Enter)
+chat_input = st.chat_input("Type your message...")
 
-if __name__ == "__main__":
-    # Streamlit apps are run with `streamlit run app_streamlit.py`, so this block is typically unused
-    st.write("Run this app with `streamlit run app_streamlit.py`")
+if chat_input:
+    # Append user message to history
+    st.session_state['chat_messages'].append({"role": "user", "content": chat_input})
+    st.session_state['chat_history'] += "You: " + chat_input + "\n"
+    history_container.text(st.session_state['chat_history'])
+
+    # Get AI response
+    response = client.chat.completions.create(
+        model=BASE_MODEL,
+        stream=True,
+        messages=st.session_state['chat_messages']
+    )
+    ai_reply = ""
+    st.session_state['chat_history'] += "AI: "
+    for chunk in response:
+        temp = chunk.choices[0].delta.content or ""
+        ai_reply += temp
+        st.session_state['chat_history'] += temp
+        history_container.text(st.session_state['chat_history'])
+
+    st.session_state['chat_history'] += "\n"
+    st.session_state['chat_messages'].append({"role": "bot", "content": ai_reply})
